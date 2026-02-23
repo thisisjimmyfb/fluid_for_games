@@ -1,0 +1,95 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CudaCompile Include="src\fluid\navier_stoke.cu">
+      <Filter>src\fluid</Filter>
+    </CudaCompile>
+    <CudaCompile Include="src\fluid\particle.cu">
+      <Filter>src\fluid</Filter>
+    </CudaCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\fluid\main.cpp">
+      <Filter>src\fluid</Filter>
+    </ClCompile>
+    <ClCompile Include="src\fluid\input.cpp">
+      <Filter>src\fluid</Filter>
+    </ClCompile>
+    <ClCompile Include="glew\src\glew.c">
+      <Filter>glew</Filter>
+    </ClCompile>
+    <ClCompile Include="src\FooBar\FbCamera.cpp">
+      <Filter>src\FooBar</Filter>
+    </ClCompile>
+    <ClCompile Include="src\FooBar\Math\FbMatrix.cpp">
+      <Filter>src\FooBar</Filter>
+    </ClCompile>
+    <ClCompile Include="src\FooBar\Math\FbVector.cpp">
+      <Filter>src\FooBar</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="glew\include\GL\wglew.h">
+      <Filter>glew</Filter>
+    </ClInclude>
+    <ClInclude Include="src\fluid\navier_stoke.h">
+      <Filter>src\fluid</Filter>
+    </ClInclude>
+    <ClInclude Include="src\fluid\particle.h">
+      <Filter>src\fluid</Filter>
+    </ClInclude>
+    <ClInclude Include="src\fluid\input.h">
+      <Filter>src\fluid</Filter>
+    </ClInclude>
+    <ClInclude Include="glew\include\GL\glxew.h">
+      <Filter>glew</Filter>
+    </ClInclude>
+    <ClInclude Include="glew\include\GL\glew.h">
+      <Filter>glew</Filter>
+    </ClInclude>
+    <ClInclude Include="src\fluid\glut.h">
+      <Filter>glew</Filter>
+    </ClInclude>
+    <ClInclude Include="src\fluid\fluid.h">
+      <Filter>src\fluid</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\FooBar.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\FbAssert.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\FbAutoArray.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\FbAutoFile.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\FbCamera.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\Math\FbMatrix.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\FbUtility.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+    <ClInclude Include="src\FooBar\Math\FbVector.h">
+      <Filter>src\FooBar</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{91f5d4ab-40d1-4b0c-855f-2023a1f6d9bf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="glew">
+      <UniqueIdentifier>{6ef42110-dff7-4b73-bd15-c51c623b92a3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\FooBar">
+      <UniqueIdentifier>{1e47d46e-589d-4b97-9806-a30fc859c89a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="src\fluid">
+      <UniqueIdentifier>{42f899e5-b7aa-41cc-be7a-6d647a226b01}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
