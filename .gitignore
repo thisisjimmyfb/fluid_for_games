@@ -39,3 +39,12 @@
 
 # debug information files
 *.dwo
+
+# IDE files
+.vs/*
+FluidSimulation/*
+src/fluid/CUDA Device Emulation/*
+x64/*
+*.vcxproj.user
+
+
