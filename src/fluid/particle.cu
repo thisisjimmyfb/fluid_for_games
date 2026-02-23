@@ -68,7 +68,7 @@ __device__ float4 Box_Muller( float4 u )
 }
 
 __global__ void particle(	float3 *p, int3 offset, dim3 dim,
-							const float3 *v, float dt )
+							const float3 * __restrict__ v, float dt )
 {
 	int index_p = blockIdx.x*blockDim.x + threadIdx.x + offset.x;
 	

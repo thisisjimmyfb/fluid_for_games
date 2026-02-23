@@ -367,7 +367,7 @@ void nsBound()
 		}
 	}
 
-	//cudaDeviceSynchronize();
+	cudaDeviceSynchronize();
 }
 
 //--------------------------------------------------------------------------
@@ -447,7 +447,7 @@ static void nsAddForce(	const FbVector3 &force,
 	}
 	
 
-	//cudaDeviceSynchronize();
+	cudaDeviceSynchronize();
 }
 
 //--------------------------------------------------------------------------
@@ -457,7 +457,7 @@ static void nsAddForce(	const FbVector3 &force,
 // read into shared memory, then used for diffusion calculation. This
 // requires overlapping blocks so that there is no gap between blocks.
 //----------------------------------------------------------------------
-__global__ void stam_diffuse(	float3 *input, float3 *output, int3 offset,
+__global__ void stam_diffuse(	const float3 * __restrict__ input, float3 *output, int3 offset,
 								float V, float C, float dt )
 {
 	extern __shared__ float3 shared[];
@@ -544,15 +544,14 @@ __global__ void stam_diffuse(	float3 *input, float3 *output, int3 offset,
 		vec.y /= C;
 		vec.z /= C;
 
-		output[ index ] = vec;
+		output[index] = vec;
 	}
-
 }
 
 static struct DiffuseConfig : OverlapConfig
 {
 
-}					diffuse_config;
+} diffuse_config;
 
 static void initDiffuse( DiffuseConfig &config, cudaDeviceProp &prop )
 {
@@ -593,15 +592,13 @@ void nsDiffuse( float dt )
 
 		current = next;
 
-		cudaDeviceSynchronize();
-
 		nsBound();
 	}
 }
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void stam_advect( float3 *v_in, float3 *v_out, int3 offset, float dt )
+__global__ void stam_advect( const float3 * __restrict__ v_in, float3 *v_out, int3 offset, float dt )
 {
 	int3 id = getGridId( offset );
 
@@ -727,7 +724,7 @@ void nsAdvect( float dt )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void compute_div(float* div, float3* v, int3 offset, float V)
+__global__ void compute_div(float* div, const float3* __restrict__ v, int3 offset, float V)
 {
 	extern __shared__ float3 shared[];
 
@@ -816,7 +813,7 @@ static void deinitDiv( DivConfig &config )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void compute_height( float *h_in, float *h_out, float *div, int3 offset )
+__global__ void compute_height( const float * __restrict__ h_in, float *h_out, const float * __restrict__ div, int3 offset )
 {
 	extern __shared__ float sharedMem[];
 
@@ -909,7 +906,7 @@ static void deinitHeight( HeightConfig &config )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void subtract_gradient( float3 *v, float *h, int3 offset, float A )
+__global__ void subtract_gradient( float3 *v, const float * __restrict__ h, int3 offset, float A )
 {
 	extern __shared__ float sharedMem[];
 

@@ -26,11 +26,10 @@
 #define HALF_HEIGHT				(0.5f*LATTICE_HEIGHT)
 #define HALF_DEPTH				(0.5f*LATTICE_DEPTH)
 
-#define ITERATION				50
+#define ITERATION				20
 
 #define VISCOSITY				50.0f
 
 //#define GRAVITY				9.8f
-#define GRAVITY					0.002f
-//#define GRAVITY				0
+#define GRAVITY					0
 
