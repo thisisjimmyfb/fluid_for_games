@@ -86,8 +86,8 @@ struct SimpleConfig
 	dim3			blockDim;
 	dim3			gridDim;
 
-	dim3			batch;
-	dim3			grid;
+	int3			batch;
+	int3			grid;
 };
 
 static void initSimpleConfig( SimpleConfig &config, cudaDeviceProp &prop )
@@ -142,8 +142,8 @@ struct OverlapConfig
 	dim3			blockDim;
 	dim3			gridDim;
 
-	dim3			batch;
-	dim3			grid;
+	int3			batch;
+	int3			grid;
 };
 
 static void initOverlapConfig( OverlapConfig &config, cudaDeviceProp &prop )
@@ -285,8 +285,8 @@ static struct BoundConfig
 	dim3			blockDim[3];
 	dim3			gridDim[3];
 
-	dim3			batch[3];
-	dim3			grid[3];
+	int3			batch[3];
+	int3			grid[3];
 
 }					bound_config;
 
@@ -349,9 +349,9 @@ void nsBound()
 {
 	for (int l=3;l--;)
 	{
-		for ( unsigned int i = 0; i < bound_config.grid[l].x; ++i )
-		for ( unsigned int j = 0; j < bound_config.grid[l].y; ++j )
-		for ( unsigned int k = 0; k < bound_config.grid[l].z; )
+		for ( int i = 0; i < bound_config.grid[l].x; ++i )
+		for ( int j = 0; j < bound_config.grid[l].y; ++j )
+		for ( int k = 0; k < bound_config.grid[l].z; )
 		{
 			unsigned int batch_count = min( bound_config.grid[l].z-k, STREAM_COUNT );
 
@@ -429,9 +429,9 @@ static void nsAddForce(	const FbVector3 &force,
 	float4 a;
 	a.x = axis.x,	a.y = axis.y,	a.z = axis.z,	a.w = spin;
 
-	for ( unsigned int i = 0; i < addforce_config.grid.x; ++i)
-	for ( unsigned int j = 0; j < addforce_config.grid.y; ++j)
-	for ( unsigned int k = 0; k < addforce_config.grid.z; )
+	for ( int i = 0; i < addforce_config.grid.x; ++i)
+	for ( int j = 0; j < addforce_config.grid.y; ++j)
+	for ( int k = 0; k < addforce_config.grid.z; )
 	{
 		unsigned int batch_count = min( addforce_config.grid.z-k, STREAM_COUNT );
 
@@ -482,8 +482,8 @@ __global__ void stam_diffuse(	float3 *input, float3 *output, int3 offset,
 	float3 vec = input[index];
 	
 	//---------------------------------------------------------
-	int2 stride = { blockDim.y*blockDim.z, blockDim.z };
-	
+	int2 stride = { (int)(blockDim.y*blockDim.z), (int)blockDim.z };
+
 	int tx = max(0, min(threadIdx.x, blockDim.x - 1));
 	int ty = max(0, min(threadIdx.y, blockDim.y - 1));
 	int tz = max(0, min(threadIdx.z, blockDim.z - 1));
@@ -574,9 +574,9 @@ void nsDiffuse( float dt )
 	{
 		int next = (current+1)%2;
 
-		for ( unsigned int i = 0; i < diffuse_config.grid.x; ++i )
-		for ( unsigned int j = 0; j < diffuse_config.grid.y; ++j )
-		for ( unsigned int k = 0; k < diffuse_config.grid.z; )
+		for ( int i = 0; i < diffuse_config.grid.x; ++i )
+		for ( int j = 0; j < diffuse_config.grid.y; ++j )
+		for ( int k = 0; k < diffuse_config.grid.z; )
 		{
 			unsigned int batch_count = min( diffuse_config.grid.z-k, STREAM_COUNT );
 
@@ -703,9 +703,9 @@ void nsAdvect( float dt )
 	int next = (current+1)%2;
 
 	//we do the trace method by jo stam
-	for ( unsigned int i = 0; i < advect_config.grid.x; ++i)
-	for ( unsigned int j = 0; j < advect_config.grid.y; ++j)
-	for ( unsigned int k = 0; k < advect_config.grid.z; )
+	for ( int i = 0; i < advect_config.grid.x; ++i)
+	for ( int j = 0; j < advect_config.grid.y; ++j)
+	for ( int k = 0; k < advect_config.grid.z; )
 	{
 		unsigned int batch_count = min( advect_config.grid.z-k, STREAM_COUNT );
 
@@ -750,7 +750,7 @@ __global__ void compute_div(float* div, float3* v, int3 offset, float V)
 
 	float3 vec = v[index];
 
-	int2 stride = { blockDim.y * blockDim.z, blockDim.z };
+	int2 stride = { (int)(blockDim.y * blockDim.z), (int)blockDim.z };
 
 	int sharedIndex = threadIdx.x * stride.x +
 					  threadIdx.y * stride.y +
@@ -838,7 +838,7 @@ __global__ void compute_height( float *h_in, float *h_out, float *div, int3 offs
 	int index = getGridIndex( id );
 
 	//---------------------------------------------------------
-	int2 stride = { blockDim.y*blockDim.z, blockDim.z };
+	int2 stride = { (int)(blockDim.y*blockDim.z), (int)blockDim.z };
 
 	int tx = max(0, min(threadIdx.x, blockDim.x - 1));
 	int ty = max(0, min(threadIdx.y, blockDim.y - 1));
@@ -933,9 +933,9 @@ __global__ void subtract_gradient( float3 *v, float *h, int3 offset, float A )
 	float height = h[index];
 	
 	//---------------------------------------------------------
-	int2 stride = { blockDim.y*blockDim.z, blockDim.z };
-	
-	int sharedIndex =	threadIdx.x*stride.x + 
+	int2 stride = { (int)(blockDim.y*blockDim.z), (int)blockDim.z };
+
+	int sharedIndex =	threadIdx.x*stride.x +
 						threadIdx.y*stride.y +
 						threadIdx.z;
 
@@ -995,9 +995,9 @@ void nsProject( float dt )
 
 		float V = 2*GRID_SIZE;
 	
-		for ( unsigned int i = 0; i < div_config.grid.x; ++i)
-		for ( unsigned int j = 0; j < div_config.grid.y; ++j)
-		for ( unsigned int k = 0; k < div_config.grid.z; )
+		for ( int i = 0; i < div_config.grid.x; ++i)
+		for ( int j = 0; j < div_config.grid.y; ++j)
+		for ( int k = 0; k < div_config.grid.z; )
 		{
 			unsigned int batch_count = min( div_config.grid.z-k, STREAM_COUNT );
 
@@ -1027,9 +1027,9 @@ void nsProject( float dt )
 
 		for (unsigned int l = ITERATION; l--;)
 		{
-			for ( unsigned int i = 0; i < height_config.grid.x; ++i )
-			for ( unsigned int j = 0; j < height_config.grid.y; ++j )
-			for ( unsigned int k = 0; k < height_config.grid.z; )
+			for ( int i = 0; i < height_config.grid.x; ++i )
+			for ( int j = 0; j < height_config.grid.y; ++j )
+			for ( int k = 0; k < height_config.grid.z; )
 			{
 				unsigned int batch_count = min( height_config.grid.z-k, STREAM_COUNT );
 
@@ -1060,9 +1060,9 @@ void nsProject( float dt )
 
 		float A = 0.5f / GRID_SIZE;
 
-		for (unsigned int i = 0; i < subgrad_config.grid.x; ++i)
-		for (unsigned int j = 0; j < subgrad_config.grid.y; ++j)
-		for (unsigned int k = 0; k < subgrad_config.grid.z; )
+		for (int i = 0; i < subgrad_config.grid.x; ++i)
+		for (int j = 0; j < subgrad_config.grid.y; ++j)
+		for (int k = 0; k < subgrad_config.grid.z; )
 		{
 			unsigned int batch_count = min(subgrad_config.grid.z - k, STREAM_COUNT);
 

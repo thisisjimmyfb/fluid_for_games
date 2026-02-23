@@ -182,7 +182,7 @@ inline FbVector3 MakeVector3( float yaw, float pitch )
 {
 	float y = sinf(pitch);
 	float h = sqrtf( 1.0f - y * y );
-	return MakeVector3( h*sin(yaw), y, h*cos(yaw) );
+	return MakeVector3( h*sinf(yaw), y, h*cosf(yaw) );
 }
 
 inline float Dot( const FbVector3 &a, const FbVector3 &b )
@@ -206,7 +206,7 @@ inline float LengthSqr( const FbVector3 &a )
 
 inline float Length( const FbVector3 &a )
 {
-	return sqrt( LengthSqr( a ) );
+	return sqrtf( LengthSqr( a ) );
 }
 
 inline float LengthXZSqr( const FbVector3 &a )
@@ -216,7 +216,7 @@ inline float LengthXZSqr( const FbVector3 &a )
 
 inline float LengthXZ( const FbVector3 &a )
 {
-	return sqrt( LengthXZSqr( a ) );
+	return sqrtf( LengthXZSqr( a ) );
 }
 
 inline FbVector3 Normalize( const FbVector3 &a )
@@ -241,7 +241,7 @@ inline float DistanceSqr( const FbVector3 &a, const FbVector3 &b )
 
 inline float Distance( const FbVector3 &a, const FbVector3 &b )
 {
-	return sqrt( DistanceSqr( a, b ) );
+	return sqrtf( DistanceSqr( a, b ) );
 }
 
 //---------------------------------------------------------------------------------------

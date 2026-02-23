@@ -3,7 +3,6 @@
 #else
 #define WINDOWS_LEAN_AND_MEAN
 #include <windows.h>
-#define GLEW_STATIC
 #include <GL/glew.h>
 #endif
 
@@ -278,16 +277,16 @@ void particleUpdate( float dt, void * v )
 
 	cudaGLMapBufferObject((void**)&data,vbo);
 
-	dim3			batch(	runtimeGridDim.x*runtimeBlockDim.x );
-	dim3			grid( simulationDim.x/batch.x );
+	int batch_x = (int)(runtimeGridDim.x*runtimeBlockDim.x);
+	int launch  = (int)(simulationDim.x/batch_x);
 
-	for ( unsigned int i = 0; i < grid.x; )
+	for ( int i = 0; i < launch; )
 	{
-		unsigned int batch_count = min( grid.x-i, STREAM_COUNT );
+		unsigned int batch_count = min( launch-i, STREAM_COUNT );
 
 		for ( unsigned int j = 0; j < batch_count; ++j,++i )
 		{
-			int3 offset = make_int3(i*batch.x,0,0);
+			int3 offset = make_int3(i*batch_x,0,0);
 
 			particle<<<runtimeGridDim,runtimeBlockDim,0,s_cudaStream[j]>>>(
 				data,
