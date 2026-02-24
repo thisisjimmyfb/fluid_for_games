@@ -855,7 +855,17 @@ __global__ void compute_height( const float * __restrict__ h_in, float *h_out, c
 						threadIdx.y < blockDim.y-1 &&
 						threadIdx.z < blockDim.z-1;
 
-	if ( bInnerBlock )
+	// Dirichlet BC takes priority: boundary cells are always zero pressure,
+	// regardless of thread index. This prevents overlap-zone threads whose
+	// domain-side neighbor is OOB (and therefore never wrote its shared memory
+	// slot) from computing a Jacobi step that reads uninitialized shared memory.
+	if (id.x == 0 || id.x == LATTICE_WIDTH - 1 ||
+		id.y == 0 || id.y == LATTICE_HEIGHT - 1 ||
+		id.z == 0 || id.z == LATTICE_DEPTH - 1)
+	{
+		h_out[index] = 0.0f;
+	}
+	else if (bInnerBlock)
 	{
 		const float C = 1.0f / 6.0f;
 
@@ -868,11 +878,6 @@ __global__ void compute_height( const float * __restrict__ h_in, float *h_out, c
 				  + sharedMem[ sharedIndex + 1 ];
 
 		h_out[index] = C * (sum - GRID_SIZE * GRID_SIZE * div[index]);
-	}
-	else
-	{
-		// Dirichlet BC: zero pressure at domain edges keeps gradient finite at boundaries
-		h_out[index] = 0.0f;
 	}
 }
 
