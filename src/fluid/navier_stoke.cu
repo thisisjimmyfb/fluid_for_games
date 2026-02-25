@@ -366,8 +366,6 @@ void nsBound()
 			}
 		}
 	}
-
-	cudaDeviceSynchronize();
 }
 
 //--------------------------------------------------------------------------
@@ -445,9 +443,6 @@ static void nsAddForce(	const FbVector3 &force,
 				( data[current], offset, f, a, dt );
 		}
 	}
-	
-
-	cudaDeviceSynchronize();
 }
 
 //--------------------------------------------------------------------------
@@ -717,8 +712,6 @@ void nsAdvect( float dt )
 	}
 
 	current = next;
-
-	cudaDeviceSynchronize();
 }
 
 //--------------------------------------------------------------------------
@@ -1014,7 +1007,6 @@ void nsProject( float dt )
 			}
 		}
 	}
-	cudaDeviceSynchronize();
 
 	//-----------------------------------------------------------
 	//compute height field
@@ -1047,10 +1039,6 @@ void nsProject( float dt )
 
 			current = next;
 			next = 1 - current;
-
-			// Sync between iterations: all blocks must finish writing h_next
-			// before the next iteration reads it as h_cur.
-			cudaDeviceSynchronize();
 		}
 	}
 
@@ -1081,7 +1069,6 @@ void nsProject( float dt )
 			}
 		}
 	}
-	cudaDeviceSynchronize();
 }
 
 //-----------------------------------------------------------------------------

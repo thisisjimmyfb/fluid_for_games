@@ -18,7 +18,8 @@
 #define LATTICE_DEPTH			LATTICE_N
 #define GRID_SIZE				0.25f
 
-#define PARTICLE_COUNT			(64*64*64)
+#define PARTICLE_COUNT			(128*128*128)
+//#define PARTICLE_COUNT			(64*64*64)
 //#define PARTICLE_COUNT			(1280000)//(64*32*32)
 //#define PARTICLE_COUNT			(16*16*16)
 
