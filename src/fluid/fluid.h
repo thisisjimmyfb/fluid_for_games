@@ -24,8 +24,8 @@
 
 #define ITERATION				20
 
-#define VISCOSITY				2.0f
+#define VISCOSITY				25.0f
 
-#define GRAVITY					0.098f
+#define GRAVITY					0.25f
 //#define GRAVITY					0
 

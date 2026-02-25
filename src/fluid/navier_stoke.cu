@@ -748,7 +748,7 @@ __global__ void compute_pressure( const float * __restrict__ p_in, float *p_out,
 	{
 		const float C = 1.0f / 6.0f;
 
-		// p_new = (sum_h_neighbors - dx² * div) / 6
+		// p_new = (div + sum_neighbors) / 6
 		float sum = sharedMem[ sharedIndex - stride.x ]
 				  + sharedMem[ sharedIndex + stride.x ]
 				  + sharedMem[ sharedIndex - stride.y ]
@@ -756,7 +756,7 @@ __global__ void compute_pressure( const float * __restrict__ p_in, float *p_out,
 				  + sharedMem[ sharedIndex - 1 ]
 				  + sharedMem[ sharedIndex + 1 ];
 
-		p_out[index] = C * (sum - GRID_SIZE * GRID_SIZE * div[index]);
+		p_out[index] = (div[index] + sum) * C;
 	}
 }
 
@@ -879,9 +879,8 @@ void nsProject( float dt )
 	}
 
 	//-----------------------------------------------------------
-	//compute height field
-	// h_cur tracks which of the two pressure buffers holds the latest result.
-	// Each Jacobi iteration reads from h[current] and writes to h[1-current],
+	// compute pressure field
+	// Each Jacobi iteration reads from p[current] and writes to p[1-current],
 	// then swaps, so reads and writes never alias.
 	{
 		int sharedMemSize = pressure_config.blockDim.x *
@@ -947,10 +946,6 @@ void nsInit( const FbVector3 *initConfig )
 	cudaDeviceProp prop;
 	int device = 0;
 	cudaGetDeviceProperties(&prop, device);
-	//prop.maxThreadsPerBlock = LATTICE_WIDTH * LATTICE_HEIGHT * LATTICE_DEPTH;
-	//prop.maxThreadsDim[0] = LATTICE_WIDTH;
-	//prop.maxThreadsDim[1] = LATTICE_HEIGHT;
-	//prop.maxThreadsDim[2] = LATTICE_DEPTH;
 
 	cudaChooseDevice( &device, &prop );
 	cudaSetDevice( device );

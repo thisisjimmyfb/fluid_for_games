@@ -92,7 +92,7 @@ void init() {
 
 		if ( LengthSqr(r) > 0.0f && LengthSqr(r) < R )
 		{
-			g_Velocity[i][j][k] = 2.5f * Normalize( Cross( FbVector3::UnitVecZ, r ) );
+			g_Velocity[i][j][k] = 16.0f * Normalize( Cross( FbVector3::UnitVecZ, r ) );
 		}
 		else
 		{
@@ -114,8 +114,7 @@ void init() {
 
 	g_Camera.SetPerspective( FOV, aspect_ratio, ZNEAR, ZFAR );
 
-	float fSize =	max(HALF_LENGTH,max(HALF_LENGTH, HALF_LENGTH)) *
-					GRID_SIZE;
+	float fSize = max(HALF_LENGTH,max(HALF_LENGTH, HALF_LENGTH)) * GRID_SIZE;
 
 	float z = 2.5f * fSize / tanf( .5f * FOV );
 
