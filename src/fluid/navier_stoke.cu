@@ -458,7 +458,7 @@ static void nsAddForce(	const FbVector3 &force,
 // requires overlapping blocks so that there is no gap between blocks.
 //----------------------------------------------------------------------
 __global__ void stam_diffuse(	const float3 * __restrict__ input, float3 *output, int3 offset,
-								float V, float C, float dt )
+								float A, float C, float dt )
 {
 	extern __shared__ float3 shared[];
 
@@ -536,9 +536,9 @@ __global__ void stam_diffuse(	const float3 * __restrict__ input, float3 *output,
 		neighborSum.y += neighbor.y;
 		neighborSum.z += neighbor.z;
 
-		vec.x += V * neighborSum.x * dt;
-		vec.y += V * neighborSum.y * dt;
-		vec.z += V * neighborSum.z * dt;
+		vec.x += A * neighborSum.x;
+		vec.y += A * neighborSum.y;
+		vec.z += A * neighborSum.z;
 
 		vec.x /= C;
 		vec.y /= C;
@@ -564,14 +564,13 @@ void nsDiffuse( float dt )
 						diffuse_config.blockDim.y *
 						diffuse_config.blockDim.z * sizeof(float3);
 
-	float V =	VISCOSITY *
-				GRID_SIZE * GRID_SIZE * GRID_SIZE;
+	float A = dt * VISCOSITY * LATTICE_N * LATTICE_N;
 
-	float C = 1.0f + 6*V*dt;
+	float C = 1.0f + 6.0f*A;
 
 	for (unsigned int l=ITERATION;l--;)
 	{
-		int next = (current+1)%2;
+		int next = 1 - current;
 
 		for ( int i = 0; i < diffuse_config.grid.x; ++i )
 		for ( int j = 0; j < diffuse_config.grid.y; ++j )
@@ -586,12 +585,12 @@ void nsDiffuse( float dt )
 								k*diffuse_config.batch.z };
 				
 				stam_diffuse<<<diffuse_config.gridDim,diffuse_config.blockDim,sharedMemSize,s_cudaStream[s]>>>
-					( data[current], data[next], offset, V, C, dt );
+					( data[current], data[next], offset, A, C, dt );
 			}
 		}
 
 		current = next;
-
+		
 		nsBound();
 	}
 }
@@ -724,7 +723,7 @@ void nsAdvect( float dt )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void compute_div(float* div, const float3* __restrict__ v, int3 offset, float V)
+__global__ void compute_div_and_reset_pressure(float* div, float* p, const float3* __restrict__ v, int3 offset, float H)
 {
 	extern __shared__ float3 shared[];
 
@@ -781,9 +780,11 @@ __global__ void compute_div(float* div, const float3* __restrict__ v, int3 offse
 
 	divergence += shared[sharedIndex + 1].z;
 
-	divergence /= V;
+	divergence *= H;
 
 	div[index] = divergence;
+
+	p[index] = 0.0f;
 }
 
 static struct DivConfig : OverlapConfig
@@ -813,7 +814,7 @@ static void deinitDiv( DivConfig &config )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void compute_height( const float * __restrict__ h_in, float *h_out, const float * __restrict__ div, int3 offset )
+__global__ void compute_pressure( const float * __restrict__ p_in, float *p_out, const float * __restrict__ div, int3 offset )
 {
 	extern __shared__ float sharedMem[];
 
@@ -843,7 +844,7 @@ __global__ void compute_height( const float * __restrict__ h_in, float *h_out, c
 	int sharedIndex = tx * stride.x + ty * stride.y + tz;
 
 	// Load current pressure (not divergence) into shared memory
-	sharedMem[sharedIndex] = h_in[index];
+	sharedMem[sharedIndex] = p_in[index];
 
 	__syncthreads();
 
@@ -857,19 +858,18 @@ __global__ void compute_height( const float * __restrict__ h_in, float *h_out, c
 
 	// Dirichlet BC takes priority: boundary cells are always zero pressure,
 	// regardless of thread index. This prevents overlap-zone threads whose
-	// domain-side neighbor is OOB (and therefore never wrote its shared memory
-	// slot) from computing a Jacobi step that reads uninitialized shared memory.
+	// domain-side neighbor is OOB.
 	if (id.x == 0 || id.x == LATTICE_WIDTH - 1 ||
 		id.y == 0 || id.y == LATTICE_HEIGHT - 1 ||
 		id.z == 0 || id.z == LATTICE_DEPTH - 1)
 	{
-		h_out[index] = 0.0f;
+		p_out[index] = 0.0f;
 	}
 	else if (bInnerBlock)
 	{
 		const float C = 1.0f / 6.0f;
 
-		// Jacobi: h_new = (sum_h_neighbors - dx² * div) / 6
+		// p_new = (sum_h_neighbors - dx² * div) / 6
 		float sum = sharedMem[ sharedIndex - stride.x ]
 				  + sharedMem[ sharedIndex + stride.x ]
 				  + sharedMem[ sharedIndex - stride.y ]
@@ -877,18 +877,18 @@ __global__ void compute_height( const float * __restrict__ h_in, float *h_out, c
 				  + sharedMem[ sharedIndex - 1 ]
 				  + sharedMem[ sharedIndex + 1 ];
 
-		h_out[index] = C * (sum - GRID_SIZE * GRID_SIZE * div[index]);
+		p_out[index] = C * (sum - GRID_SIZE * GRID_SIZE * div[index]);
 	}
 }
 
-static struct HeightConfig : SimpleConfig
+static struct PressureConfig : SimpleConfig
 {
-	//will be used to hold our divergence and height value
-	float			*height[2];
+	//will be used to hold our pressure field
+	float *p[2];
 
-}					height_config;
+} pressure_config;
 
-static void initHeight( HeightConfig &config, cudaDeviceProp &prop )
+static void initPressure(PressureConfig &config, cudaDeviceProp &prop)
 {
 	initSimpleConfig( config, prop );
 
@@ -897,21 +897,21 @@ static void initHeight( HeightConfig &config, cudaDeviceProp &prop )
 					LATTICE_HEIGHT *
 					LATTICE_DEPTH * sizeof(float);
 
-	cudaMalloc( &config.height[0], memSize );
-	cudaMemset( config.height[0], 0, memSize );
-	cudaMalloc( &config.height[1], memSize );
-	cudaMemset( config.height[1], 0, memSize );
+	cudaMalloc(&config.p[0], memSize);
+	cudaMalloc(&config.p[1], memSize);
+	cudaMemset(config.p[0], 0, memSize);
+	cudaMemset(config.p[1], 0, memSize);
 }
 
-static void deinitHeight( HeightConfig &config )
+static void deinitPressure(PressureConfig &config)
 {
-	cudaFree( config.height[0] );
-	cudaFree( config.height[1] );
+	cudaFree(config.p[1]);
+	cudaFree(config.p[0]);
 }
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void subtract_gradient( float3 *v, const float * __restrict__ h, int3 offset, float A )
+__global__ void subtract_gradient( float3 *v, const float * __restrict__ p, int3 offset, float A )
 {
 	extern __shared__ float sharedMem[];
 
@@ -925,14 +925,14 @@ __global__ void subtract_gradient( float3 *v, const float * __restrict__ h, int3
 	if (id.x < 0 ||
 		id.y < 0 ||
 		id.z < 0 ||
-		id.x >= LATTICE_WIDTH - 1 ||
-		id.y >= LATTICE_HEIGHT - 1 ||
-		id.z >= LATTICE_DEPTH - 1)
+		id.x >= LATTICE_WIDTH-1 ||
+		id.y >= LATTICE_HEIGHT-1 ||
+		id.z >= LATTICE_DEPTH-1)
 		return;
 
 	int index = getGridIndex( id );
 
-	float height = h[index];
+	float pressure = p[index];
 	
 	//---------------------------------------------------------
 	int2 stride = { (int)(blockDim.y*blockDim.z), (int)blockDim.z };
@@ -941,7 +941,7 @@ __global__ void subtract_gradient( float3 *v, const float * __restrict__ h, int3
 						threadIdx.y*stride.y +
 						threadIdx.z;
 
-	sharedMem[sharedIndex] = height;
+	sharedMem[sharedIndex] = pressure;
 	
 	__syncthreads();
 
@@ -957,16 +957,16 @@ __global__ void subtract_gradient( float3 *v, const float * __restrict__ h, int3
 	{
 		float3 vec = v[index];
 
-		float height_left = sharedMem[sharedIndex - stride.x];
-		float height_right = sharedMem[ sharedIndex + stride.x ];
-		float height_down = sharedMem[ sharedIndex - stride.y ];
-		float height_up = sharedMem[ sharedIndex + stride.y ];
-		float height_front = sharedMem[ sharedIndex - 1 ];
-		float height_back = sharedMem[ sharedIndex + 1 ];
+		float pressure_left = sharedMem[sharedIndex - stride.x];
+		float pressure_right = sharedMem[ sharedIndex + stride.x ];
+		float pressure_down = sharedMem[ sharedIndex - stride.y ];
+		float pressure_up = sharedMem[ sharedIndex + stride.y ];
+		float pressure_front = sharedMem[ sharedIndex - 1 ];
+		float pressure_back = sharedMem[ sharedIndex + 1 ];
 
-		vec.x -= A * ( height_right - height_left );
-		vec.y -= A * ( height_up - height_down );
-		vec.z -= A * ( height_back - height_front );
+		vec.x -= A * (pressure_right - pressure_left);
+		vec.y -= A * (pressure_up - pressure_down);
+		vec.z -= A * (pressure_back - pressure_front);
 
 		v[index] = vec;
 	}
@@ -995,7 +995,7 @@ void nsProject( float dt )
 							div_config.blockDim.y *
 							div_config.blockDim.z * sizeof(float3);
 
-		float V = 2*GRID_SIZE;
+		float H = -0.5/LATTICE_N;
 	
 		for ( int i = 0; i < div_config.grid.x; ++i)
 		for ( int j = 0; j < div_config.grid.y; ++j)
@@ -1009,8 +1009,8 @@ void nsProject( float dt )
 								j*div_config.batch.y,
 								k*div_config.batch.z };
 			
-				compute_div<<<div_config.gridDim,div_config.blockDim,sharedMemSize,s_cudaStream[s]>>>
-					( div_config.div, data[current], offset, V );
+				compute_div_and_reset_pressure<<<div_config.gridDim,div_config.blockDim,sharedMemSize,s_cudaStream[s]>>>
+					( div_config.div, pressure_config.p[current], data[current], offset, H);
 			}
 		}
 	}
@@ -1019,32 +1019,34 @@ void nsProject( float dt )
 	//-----------------------------------------------------------
 	//compute height field
 	// h_cur tracks which of the two pressure buffers holds the latest result.
-	// Each Jacobi iteration reads from h[h_cur] and writes to h[1-h_cur],
-	// then swaps, so reads and writes never alias — eliminating the race
-	// condition that existed when the kernel updated h in-place.
+	// Each Jacobi iteration reads from h[current] and writes to h[1-current],
+	// then swaps, so reads and writes never alias.
 	{
-		int sharedMemSize = height_config.blockDim.x *
-							height_config.blockDim.y *
-							height_config.blockDim.z * sizeof(float);
+		int sharedMemSize = pressure_config.blockDim.x *
+							pressure_config.blockDim.y *
+							pressure_config.blockDim.z * sizeof(float);
 
 		for (unsigned int l = ITERATION; l--;)
 		{
-			for ( int i = 0; i < height_config.grid.x; ++i )
-			for ( int j = 0; j < height_config.grid.y; ++j )
-			for ( int k = 0; k < height_config.grid.z; )
+			for ( int i = 0; i < pressure_config.grid.x; ++i )
+			for ( int j = 0; j < pressure_config.grid.y; ++j )
+			for ( int k = 0; k < pressure_config.grid.z; )
 			{
-				unsigned int batch_count = min( height_config.grid.z-k, STREAM_COUNT );
+				unsigned int batch_count = min( pressure_config.grid.z-k, STREAM_COUNT );
 
 				for ( unsigned int s = 0; s < batch_count; ++s, ++k )
 				{
-					int3 offset = {	i*height_config.batch.x,
-									j*height_config.batch.y,
-									k*height_config.batch.z };
+					int3 offset = {	i*pressure_config.batch.x,
+									j*pressure_config.batch.y,
+									k*pressure_config.batch.z };
 
-					compute_height<<<height_config.gridDim, height_config.blockDim, sharedMemSize, s_cudaStream[s]>>>
-						( height_config.height[current], height_config.height[next], div_config.div, offset );
+					compute_pressure<<<pressure_config.gridDim, pressure_config.blockDim, sharedMemSize, s_cudaStream[s]>>>
+						( pressure_config.p[current], pressure_config.p[next], div_config.div, offset );
 				}
 			}
+
+			current = next;
+			next = 1 - current;
 
 			// Sync between iterations: all blocks must finish writing h_next
 			// before the next iteration reads it as h_cur.
@@ -1060,7 +1062,7 @@ void nsProject( float dt )
 							subgrad_config.blockDim.y *
 							subgrad_config.blockDim.z * sizeof(float);
 
-		float A = 0.5f / GRID_SIZE;
+		float A = 0.5f * LATTICE_N;
 
 		for (int i = 0; i < subgrad_config.grid.x; ++i)
 		for (int j = 0; j < subgrad_config.grid.y; ++j)
@@ -1075,7 +1077,7 @@ void nsProject( float dt )
 								k * subgrad_config.batch.z };
 
 				subtract_gradient<<<subgrad_config.gridDim, subgrad_config.blockDim, sharedMemSize, s_cudaStream[s]>>>
-					(data[current], height_config.height[next], offset, A);
+					(data[current], pressure_config.p[next], offset, A);
 			}
 		}
 	}
@@ -1141,7 +1143,7 @@ void nsInit( const FbVector3 *initConfig )
 
 	initDiv( div_config, prop );
 
-	initHeight( height_config, prop );
+	initPressure( pressure_config, prop );
 
 	initSubGrad( subgrad_config, prop );
 
@@ -1167,7 +1169,7 @@ void nsInit( const FbVector3 *initConfig )
 void nsDeinit()
 {
 	deinitDiv( div_config );
-	deinitHeight( height_config );
+	deinitPressure( pressure_config );
 
 	cudaFree( data[0] );
 	cudaFree( data[1] );
