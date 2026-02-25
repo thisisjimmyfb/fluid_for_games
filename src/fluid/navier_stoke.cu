@@ -8,9 +8,9 @@
 __device__ float3 getGridPos( int3 id )
 {
 	float3 grid_pos;
-	grid_pos.x = ( id.x - HALF_WIDTH + 0.5f )	* GRID_SIZE;
-	grid_pos.y = ( id.y - HALF_HEIGHT + 0.5f )	* GRID_SIZE;
-	grid_pos.z = ( id.z - HALF_DEPTH + 0.5f )	* GRID_SIZE;
+	grid_pos.x = ( id.x - HALF_LENGTH + 0.5f )	* GRID_SIZE;
+	grid_pos.y = ( id.y - HALF_LENGTH + 0.5f )	* GRID_SIZE;
+	grid_pos.z = ( id.z - HALF_LENGTH + 0.5f )	* GRID_SIZE;
 
 	return grid_pos;
 }
@@ -18,13 +18,13 @@ __device__ float3 getGridPos( int3 id )
 __device__ int3 getGridCoord( float3 pos )
 {
 	int3 grid_coord;
-	grid_coord.x = int( pos.x / GRID_SIZE + HALF_WIDTH );
-	grid_coord.y = int( pos.y / GRID_SIZE + HALF_HEIGHT );
-	grid_coord.z = int( pos.z / GRID_SIZE + HALF_DEPTH );
+	grid_coord.x = int( pos.x / GRID_SIZE + HALF_LENGTH);
+	grid_coord.y = int( pos.y / GRID_SIZE + HALF_LENGTH);
+	grid_coord.z = int( pos.z / GRID_SIZE + HALF_LENGTH);
 
-	grid_coord.x = max( 0, min( grid_coord.x, LATTICE_WIDTH-1 ) );
-	grid_coord.y = max( 0, min( grid_coord.y, LATTICE_HEIGHT-1 ) );
-	grid_coord.z = max( 0, min( grid_coord.z, LATTICE_DEPTH-1 ) );
+	grid_coord.x = max( 0, min( grid_coord.x, LATTICE_LENGTH-1 ) );
+	grid_coord.y = max( 0, min( grid_coord.y, LATTICE_LENGTH-1 ) );
+	grid_coord.z = max( 0, min( grid_coord.z, LATTICE_LENGTH-1 ) );
 
 	return grid_coord;
 }
@@ -32,9 +32,9 @@ __device__ int3 getGridCoord( float3 pos )
 __device__ float3 getGridEdgeCoord( int3 id )
 {
 	float3 grid_coord;
-	grid_coord.x = ( id.x - HALF_WIDTH )	* GRID_SIZE;
-	grid_coord.y = ( id.y - HALF_HEIGHT )	* GRID_SIZE;
-	grid_coord.z = ( id.z - HALF_DEPTH )	* GRID_SIZE;
+	grid_coord.x = ( id.x - HALF_LENGTH)	* GRID_SIZE;
+	grid_coord.y = ( id.y - HALF_LENGTH)	* GRID_SIZE;
+	grid_coord.z = ( id.z - HALF_LENGTH)	* GRID_SIZE;
 
 	return grid_coord;
 }
@@ -51,8 +51,8 @@ __device__ int3 getGridId( int3 offset )
 
 __device__ int getGridIndex( int3 id )
 {
-	return	id.x*LATTICE_HEIGHT*LATTICE_DEPTH +
-			id.y*LATTICE_DEPTH +
+	return	id.x * LATTICE_LENGTH * LATTICE_LENGTH +
+			id.y * LATTICE_LENGTH +
 			id.z;
 }
 
@@ -73,9 +73,7 @@ __device__ float norm( float3 v )
 //--------------------------------------------------------------------------
 static float3			*data[2];	//double buffering
 static int				current;
-
-static const int		STREAM_COUNT = 4;
-static cudaStream_t		s_cudaStream[STREAM_COUNT];
+static cudaStream_t		s_cudaStream;
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
@@ -85,52 +83,32 @@ struct SimpleConfig
 
 	dim3			blockDim;
 	dim3			gridDim;
-
-	int3			batch;
-	int3			grid;
 };
 
 static void initSimpleConfig( SimpleConfig &config, cudaDeviceProp &prop )
 {
-	config.problemSize.x = LATTICE_WIDTH;
-	config.problemSize.y = LATTICE_HEIGHT;
-	config.problemSize.z = LATTICE_DEPTH;
+	config.problemSize.x = LATTICE_LENGTH + 2;
+	config.problemSize.y = LATTICE_LENGTH + 2;
+	config.problemSize.z = LATTICE_LENGTH + 2;
 
-	int size = min( prop.maxThreadsPerBlock,	LATTICE_WIDTH *
-												LATTICE_HEIGHT *
-												LATTICE_DEPTH );
+	int blockSize = min(config.problemSize.x * config.problemSize.y * config.problemSize.z, prop.maxThreadsPerBlock);
 
-	//take the cube root
-	float fBlockLength = pow( (float)size, 0.3333333333f );
-
+	float fBlockLength = pow((float)blockSize, 0.3333333333f);
 	//then truncate
 	int nBlockLength = (int)fBlockLength;
 
-	config.blockDim.x = min( nBlockLength, prop.maxThreadsDim[0] );
-	config.blockDim.y = min( nBlockLength, prop.maxThreadsDim[1] );
-	config.blockDim.z = min( nBlockLength, prop.maxThreadsDim[2] );
+	config.blockDim.x = min(min(config.problemSize.x, nBlockLength), prop.maxThreadsDim[0]);
+	config.blockDim.y = min(min(config.problemSize.y, nBlockLength), prop.maxThreadsDim[1]);
+	config.blockDim.z = min(min(config.problemSize.z, nBlockLength), prop.maxThreadsDim[2]);
 
 	//----------------------------------------------------------------------
-	config.gridDim.x = config.problemSize.x / config.blockDim.x;
-	config.gridDim.y = config.problemSize.y / config.blockDim.y;
-	config.gridDim.z = config.problemSize.z / config.blockDim.z;
+	config.gridDim.x = (config.problemSize.x + config.blockDim.x - 1) / config.blockDim.x;
+	config.gridDim.y = (config.problemSize.y + config.blockDim.y - 1) / config.blockDim.y;
+	config.gridDim.z = (config.problemSize.z + config.blockDim.z - 1) / config.blockDim.z;
 
 	config.gridDim.x = min( config.gridDim.x, prop.maxGridSize[0] );
 	config.gridDim.y = min( config.gridDim.y, prop.maxGridSize[1] );
 	config.gridDim.z = min( config.gridDim.z, prop.maxGridSize[2] );
-	
-	config.batch.x = config.gridDim.x*config.blockDim.x;
-	config.batch.y = config.gridDim.y*config.blockDim.y;
-	config.batch.z = config.gridDim.z*config.blockDim.z;
-
-	config.grid.x = config.problemSize.x/config.batch.x;
-	config.grid.y = config.problemSize.y/config.batch.y;
-	config.grid.z = config.problemSize.z/config.batch.z;
-
-
-	config.grid.x += config.problemSize.x%config.batch.x ? 1:0;
-	config.grid.y += config.problemSize.y%config.batch.y ? 1:0;
-	config.grid.z += config.problemSize.z%config.batch.z ? 1:0;
 }
 
 //--------------------------------------------------------------------------
@@ -141,21 +119,16 @@ struct OverlapConfig
 
 	dim3			blockDim;
 	dim3			gridDim;
-
-	int3			batch;
-	int3			grid;
 };
 
 static void initOverlapConfig( OverlapConfig &config, cudaDeviceProp &prop )
 {
-	config.problemSize.x = LATTICE_WIDTH;
-	config.problemSize.y = LATTICE_HEIGHT;
-	config.problemSize.z = LATTICE_DEPTH;
+	config.problemSize.x = LATTICE_LENGTH;
+	config.problemSize.y = LATTICE_LENGTH;
+	config.problemSize.z = LATTICE_LENGTH;
 
-
-	int size = min( prop.maxThreadsPerBlock,	LATTICE_WIDTH *
-												LATTICE_HEIGHT *
-												LATTICE_DEPTH );
+	int size = min( prop.maxThreadsPerBlock, 
+		LATTICE_LENGTH * LATTICE_LENGTH * LATTICE_LENGTH);
 
 	//take the cube root
 	float fBlockLength = pow( (float)size, 0.3333333333f );
@@ -191,29 +164,17 @@ static void initOverlapConfig( OverlapConfig &config, cudaDeviceProp &prop )
 	config.gridDim.x = min( logicalGridDim.x, prop.maxGridSize[0] );
 	config.gridDim.y = min( logicalGridDim.y, prop.maxGridSize[1] );
 	config.gridDim.z = min( logicalGridDim.z, prop.maxGridSize[2] );
-	
-	config.batch.x = config.gridDim.x*logicalBlockDim.x;
-	config.batch.y = config.gridDim.y*logicalBlockDim.y;
-	config.batch.z = config.gridDim.z*logicalBlockDim.z;
-
-	config.grid.x = logicalSimDim.x/config.batch.x;
-	config.grid.y = logicalSimDim.y/config.batch.y;
-	config.grid.z = logicalSimDim.z/config.batch.z;
-
-	config.grid.x += logicalSimDim.x%config.batch.x ? 1:0;
-	config.grid.y += logicalSimDim.y%config.batch.y ? 1:0;
-	config.grid.z += logicalSimDim.z%config.batch.z ? 1:0;
 }
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void set_bound( float3 *v, int3 offset, int dir )
+__global__ void set_bound( float3 *v, int dir )
 {
-	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x + offset.x;
-	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y + offset.y;
+	unsigned int x = blockIdx.x*blockDim.x + threadIdx.x;
+	unsigned int y = blockIdx.y*blockDim.y + threadIdx.y;
 	
 	//this will be 0 (lower bound) or 1 (upper bound)
-	unsigned int b = blockIdx.z*blockDim.z + threadIdx.z + offset.z;
+	unsigned int b = blockIdx.z*blockDim.z + threadIdx.z;
 
 	//-----------------------------------------------------------
 	// map our planar coordinate to 3D
@@ -221,39 +182,39 @@ __global__ void set_bound( float3 *v, int3 offset, int dir )
 
 	if ( dir == 0 ) //x direction => zy plane
 	{
-		id.x = b * (LATTICE_WIDTH-1);
+		id.x = b * (LATTICE_LENGTH-1);
 		id.y = y;
 		id.z = x;
 
-		if ( id.z >= LATTICE_DEPTH || id.y >= LATTICE_HEIGHT ) return;
+		if ( id.z >= LATTICE_LENGTH || id.y >= LATTICE_LENGTH) return;
 
-		neighborId.x = b ? LATTICE_WIDTH-2 : 1;
-		neighborId.y = max( 1, min( id.y, LATTICE_HEIGHT-2 ) );
-		neighborId.z = max( 1, min( id.z, LATTICE_DEPTH-2 ) );
+		neighborId.x = b ? LATTICE_LENGTH-2 : 1;
+		neighborId.y = max( 1, min( id.y, LATTICE_LENGTH -2 ) );
+		neighborId.z = max( 1, min( id.z, LATTICE_LENGTH -2 ) );
 	}
 	else if ( dir == 1 ) //y direction => xz plane
 	{
 		id.x = x;
-		id.y = b * (LATTICE_HEIGHT-1);
+		id.y = b * (LATTICE_LENGTH-1);
 		id.z = y;
 
-		if ( id.x >= LATTICE_WIDTH || id.z >= LATTICE_DEPTH ) return;
+		if ( id.x >= LATTICE_LENGTH || id.z >= LATTICE_LENGTH) return;
 
-		neighborId.x = max( 1, min( id.x, LATTICE_WIDTH-2 ) );
-		neighborId.y = b ? LATTICE_HEIGHT-2 : 1;
-		neighborId.z = max( 1, min( id.z, LATTICE_DEPTH-2 ) );
+		neighborId.x = max( 1, min( id.x, LATTICE_LENGTH-2 ) );
+		neighborId.y = b ? LATTICE_LENGTH-2 : 1;
+		neighborId.z = max( 1, min( id.z, LATTICE_LENGTH-2 ) );
 	}
 	else //if ( dir == 2 ) //z direction => xy plane
 	{
 		id.x = x;
 		id.y = y;
-		id.z = b * (LATTICE_DEPTH-1);
+		id.z = b * (LATTICE_LENGTH-1);
 
-		if ( id.x >= LATTICE_WIDTH || id.y >= LATTICE_HEIGHT ) return;
+		if (id.x >= LATTICE_LENGTH || id.y >= LATTICE_LENGTH) return;
 
-		neighborId.x = max( 1, min( id.x, LATTICE_WIDTH-2 ) );
-		neighborId.y = max( 1, min( id.y, LATTICE_HEIGHT-2 ) );
-		neighborId.z = b ? LATTICE_DEPTH-2 : 1;
+		neighborId.x = max( 1, min( id.x, LATTICE_LENGTH-2 ) );
+		neighborId.y = max( 1, min( id.y, LATTICE_LENGTH-2 ) );
+		neighborId.z = b ? LATTICE_LENGTH-2 : 1;
 	}
 
 	int neighborIndex = getGridIndex( neighborId );
@@ -267,9 +228,9 @@ __global__ void set_bound( float3 *v, int3 offset, int dir )
 	// reflections one at a time (rather than combining into a single diagonal
 	// normal) avoids cross-coupling that would otherwise trap particles at
 	// edges and corners.
-	if ( id.x == 0 || id.x == LATTICE_WIDTH-1  ) vec.x = -vec.x;
-	if ( id.y == 0 || id.y == LATTICE_HEIGHT-1 ) vec.y = -vec.y;
-	if ( id.z == 0 || id.z == LATTICE_DEPTH-1  ) vec.z = -vec.z;
+	if ( id.x == 0 || id.x == LATTICE_LENGTH-1  ) vec.x = -vec.x;
+	if ( id.y == 0 || id.y == LATTICE_LENGTH-1 ) vec.y = -vec.y;
+	if ( id.z == 0 || id.z == LATTICE_LENGTH-1  ) vec.z = -vec.z;
 
 	//----------------------------------------------------------
 	int index = getGridIndex( id );
@@ -285,9 +246,6 @@ static struct BoundConfig
 	dim3			blockDim[3];
 	dim3			gridDim[3];
 
-	int3			batch[3];
-	int3			grid[3];
-
 }					bound_config;
 
 static void initBound( BoundConfig &config, cudaDeviceProp &prop )
@@ -295,18 +253,18 @@ static void initBound( BoundConfig &config, cudaDeviceProp &prop )
 	int blockSize = (int)sqrt( (float)(prop.maxThreadsPerBlock/2) );
 
 	// zy plane
-	config.problemSize[0].x = LATTICE_DEPTH;
-	config.problemSize[0].y = LATTICE_HEIGHT;
+	config.problemSize[0].x = LATTICE_LENGTH;
+	config.problemSize[0].y = LATTICE_LENGTH;
 	config.problemSize[0].z = 2;
 
 	// xz plane
-	config.problemSize[1].x = LATTICE_WIDTH;
-	config.problemSize[1].y = LATTICE_DEPTH;
+	config.problemSize[1].x = LATTICE_LENGTH;
+	config.problemSize[1].y = LATTICE_LENGTH;
 	config.problemSize[1].z = 2;
 
 	// xy plane
-	config.problemSize[2].x = LATTICE_WIDTH;
-	config.problemSize[2].y = LATTICE_HEIGHT;
+	config.problemSize[2].x = LATTICE_LENGTH;
+	config.problemSize[2].y = LATTICE_LENGTH;
 	config.problemSize[2].z = 2;
 
 	for (int i=3;i--;)
@@ -330,18 +288,6 @@ static void initBound( BoundConfig &config, cudaDeviceProp &prop )
 		config.gridDim[i].x = min( config.gridDim[i].x, prop.maxGridSize[0] );
 		config.gridDim[i].y = min( config.gridDim[i].y, prop.maxGridSize[1] );
 		config.gridDim[i].z = min( config.gridDim[i].z, prop.maxGridSize[2] );
-
-		config.batch[i].x = config.gridDim[i].x*config.blockDim[i].x;
-		config.batch[i].y = config.gridDim[i].y*config.blockDim[i].y;
-		config.batch[i].z = config.gridDim[i].z*config.blockDim[i].z;
-
-		config.grid[i].x = config.problemSize[i].x/config.batch[i].x;
-		config.grid[i].y = config.problemSize[i].y/config.batch[i].y;
-		config.grid[i].z = config.problemSize[i].z/config.batch[i].z;
-
-		config.grid[i].x += config.problemSize[i].x%config.batch[i].x ? 1:0;
-		config.grid[i].y += config.problemSize[i].y%config.batch[i].y ? 1:0;
-		config.grid[i].z += config.problemSize[i].z%config.batch[i].z ? 1:0;
 	}
 }
 
@@ -349,34 +295,19 @@ void nsBound()
 {
 	for (int l=3;l--;)
 	{
-		for ( int i = 0; i < bound_config.grid[l].x; ++i )
-		for ( int j = 0; j < bound_config.grid[l].y; ++j )
-		for ( int k = 0; k < bound_config.grid[l].z; )
-		{
-			unsigned int batch_count = min( bound_config.grid[l].z-k, STREAM_COUNT );
-
-			for ( unsigned int s = 0; s < batch_count; ++s, ++k )
-			{
-				int3 offset = {	i*bound_config.batch[l].x,
-								j*bound_config.batch[l].y,
-								k*bound_config.batch[l].z };
-
-				set_bound<<<bound_config.gridDim[l],bound_config.blockDim[l],0,s_cudaStream[s]>>>
-						( data[current], offset, l );
-			}
-		}
+		set_bound<<<bound_config.gridDim[l],bound_config.blockDim[l],0,s_cudaStream>>>
+			(data[current], l);
 	}
 }
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void add_force(	float3 *v, int3 offset,
-							float3 force, float4 spin, float dt )
+__global__ void add_force( float3 *v, float3 force, float4 spin, float dt )
 {
-	int3 id = getGridId( offset );
-	if (id.x < 0 || id.x >= LATTICE_WIDTH ||
-		id.y < 0 || id.y >= LATTICE_HEIGHT ||
-		id.z < 0 || id.z >= LATTICE_DEPTH) return;
+	int3 id = getGridId({ 0,0,0 });
+	if (id.x < 0 || id.x >= LATTICE_LENGTH ||
+		id.y < 0 || id.y >= LATTICE_LENGTH ||
+		id.z < 0 || id.z >= LATTICE_LENGTH) return;
 
 	int index = getGridIndex( id );
 
@@ -427,22 +358,7 @@ static void nsAddForce(	const FbVector3 &force,
 	float4 a;
 	a.x = axis.x,	a.y = axis.y,	a.z = axis.z,	a.w = spin;
 
-	for ( int i = 0; i < addforce_config.grid.x; ++i)
-	for ( int j = 0; j < addforce_config.grid.y; ++j)
-	for ( int k = 0; k < addforce_config.grid.z; )
-	{
-		unsigned int batch_count = min( addforce_config.grid.z-k, STREAM_COUNT );
-
-		for ( unsigned int s = 0; s < batch_count; ++s, ++k )
-		{
-			int3 offset = {	i*addforce_config.batch.x,
-							j*addforce_config.batch.y,
-							k*addforce_config.batch.z };
-			
-			add_force<<<addforce_config.gridDim,addforce_config.blockDim,0,s_cudaStream[s]>>>
-				( data[current], offset, f, a, dt );
-		}
-	}
+	add_force<<<addforce_config.gridDim,addforce_config.blockDim,0,s_cudaStream>>>( data[current], f, a, dt );
 }
 
 //--------------------------------------------------------------------------
@@ -452,24 +368,24 @@ static void nsAddForce(	const FbVector3 &force,
 // read into shared memory, then used for diffusion calculation. This
 // requires overlapping blocks so that there is no gap between blocks.
 //----------------------------------------------------------------------
-__global__ void stam_diffuse(	const float3 * __restrict__ input, float3 *output, int3 offset,
-								float A, float C, float dt )
+__global__ void stam_diffuse(const float3 * __restrict__ input, float3 *output,
+							 float A, float C, float dt )
 {
 	extern __shared__ float3 shared[];
 
 	int3 shift;
-	shift.x = -(blockIdx.x<<1) + offset.x;
-	shift.y = -(blockIdx.y<<1) + offset.y;
-	shift.z = -(blockIdx.z<<1) + offset.z;
+	shift.x = -2*blockIdx.x;
+	shift.y = -2*blockIdx.y;
+	shift.z = -2*blockIdx.z;
 
 	int3 id = getGridId( shift );
 	
 	if (id.x < 0 ||
 		id.y < 0 ||
 		id.z < 0 ||
-		id.x >= LATTICE_WIDTH ||
-		id.y >= LATTICE_HEIGHT ||
-		id.z >= LATTICE_DEPTH)
+		id.x >= LATTICE_LENGTH ||
+		id.y >= LATTICE_LENGTH ||
+		id.z >= LATTICE_LENGTH)
 		return;
 
 	int index = getGridIndex( id );
@@ -559,7 +475,7 @@ void nsDiffuse( float dt )
 						diffuse_config.blockDim.y *
 						diffuse_config.blockDim.z * sizeof(float3);
 
-	float A = dt * VISCOSITY * LATTICE_N * LATTICE_N;
+	float A = dt * VISCOSITY * (LATTICE_LENGTH-2) * (LATTICE_LENGTH-2);
 
 	float C = 1.0f + 6.0f*A;
 
@@ -567,23 +483,9 @@ void nsDiffuse( float dt )
 	{
 		int next = 1 - current;
 
-		for ( int i = 0; i < diffuse_config.grid.x; ++i )
-		for ( int j = 0; j < diffuse_config.grid.y; ++j )
-		for ( int k = 0; k < diffuse_config.grid.z; )
-		{
-			unsigned int batch_count = min( diffuse_config.grid.z-k, STREAM_COUNT );
-
-			for ( unsigned int s = 0; s < batch_count; ++s, ++k )
-			{
-				int3 offset = {	i*diffuse_config.batch.x,
-								j*diffuse_config.batch.y,
-								k*diffuse_config.batch.z };
-				
-				stam_diffuse<<<diffuse_config.gridDim,diffuse_config.blockDim,sharedMemSize,s_cudaStream[s]>>>
-					( data[current], data[next], offset, A, C, dt );
-			}
-		}
-
+		stam_diffuse<<<diffuse_config.gridDim,diffuse_config.blockDim,sharedMemSize,s_cudaStream>>>
+			( data[current], data[next], A, C, dt );
+	
 		current = next;
 		
 		nsBound();
@@ -592,15 +494,15 @@ void nsDiffuse( float dt )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void stam_advect( const float3 * __restrict__ v_in, float3 *v_out, int3 offset, float dt )
+__global__ void stam_advect( const float3 * __restrict__ v_in, float3 *v_out, float dt )
 {
-	int3 id = getGridId( offset );
+	int3 id = getGridId({0,0,0});
 
-	if (id.x < 0 || id.x >= LATTICE_WIDTH ||
-		id.y < 0 || id.y >= LATTICE_HEIGHT ||
-		id.z < 0 || id.z >= LATTICE_DEPTH) return;
+	if (id.x < 0 || id.x >= LATTICE_LENGTH ||
+		id.y < 0 || id.y >= LATTICE_LENGTH ||
+		id.z < 0 || id.z >= LATTICE_LENGTH) return;
 
-	int index = getGridIndex( id );
+	int index = getGridIndex(id);
 	
 	int prev_index = index;
 
@@ -694,44 +596,30 @@ void nsAdvect( float dt )
 	int next = (current+1)%2;
 
 	//we do the trace method by jo stam
-	for ( int i = 0; i < advect_config.grid.x; ++i)
-	for ( int j = 0; j < advect_config.grid.y; ++j)
-	for ( int k = 0; k < advect_config.grid.z; )
-	{
-		unsigned int batch_count = min( advect_config.grid.z-k, STREAM_COUNT );
-
-		for ( unsigned int s = 0; s < batch_count; ++s, ++k )
-		{
-			int3 offset = {	i*advect_config.batch.x,
-							j*advect_config.batch.y,
-							k*advect_config.batch.z };
-
-			stam_advect<<<advect_config.gridDim,advect_config.blockDim,0,s_cudaStream[s]>>>
-				( data[current], data[next], offset, dt );
-		}
-	}
+	stam_advect<<<advect_config.gridDim,advect_config.blockDim,0,s_cudaStream>>>
+		( data[current], data[next], dt );
 
 	current = next;
 }
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void compute_div_and_reset_pressure(float* div, float* p, const float3* __restrict__ v, int3 offset, float H)
+__global__ void compute_div_and_reset_pressure(float* div, float* p, const float3* __restrict__ v, float H)
 {
 	extern __shared__ float3 shared[];
 
 	int3 shift;
-	shift.x = -2 * int(blockIdx.x) + offset.x;
-	shift.y = -2 * int(blockIdx.y) + offset.y;
-	shift.z = -2 * int(blockIdx.z) + offset.z;
+	shift.x = -2 * int(blockIdx.x);
+	shift.y = -2 * int(blockIdx.y);
+	shift.z = -2 * int(blockIdx.z);
 
 	int3 gridId = getGridId(shift);
 	if (gridId.x < 0 ||
 		gridId.y < 0 ||
 		gridId.z < 0 ||
-		gridId.x >= LATTICE_WIDTH ||
-		gridId.y >= LATTICE_HEIGHT ||
-		gridId.z >= LATTICE_DEPTH)
+		gridId.x >= LATTICE_LENGTH ||
+		gridId.y >= LATTICE_LENGTH ||
+		gridId.z >= LATTICE_LENGTH)
 		return;
 
 	//---------------------------------------------------------
@@ -792,9 +680,7 @@ static void initDiv( DivConfig &config, cudaDeviceProp &prop )
 	initOverlapConfig( config, prop );
 
 	//----------------------------------------------------------------------
-	int memSize =	LATTICE_WIDTH *
-					LATTICE_HEIGHT *
-					LATTICE_DEPTH * sizeof(float);
+	int memSize = LATTICE_LENGTH * LATTICE_LENGTH * LATTICE_LENGTH * sizeof(float);
 
 	cudaMalloc( &config.div, memSize );
 	cudaMemset( config.div, 0, memSize );
@@ -807,23 +693,23 @@ static void deinitDiv( DivConfig &config )
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void compute_pressure( const float * __restrict__ p_in, float *p_out, const float * __restrict__ div, int3 offset )
+__global__ void compute_pressure( const float * __restrict__ p_in, float *p_out, const float * __restrict__ div )
 {
 	extern __shared__ float sharedMem[];
 
 	int3 shift;
-	shift.x = -2 * int(blockIdx.x) + offset.x;
-	shift.y = -2 * int(blockIdx.y) + offset.y;
-	shift.z = -2 * int(blockIdx.z) + offset.z;
+	shift.x = -2 * int(blockIdx.x);
+	shift.y = -2 * int(blockIdx.y);
+	shift.z = -2 * int(blockIdx.z);
 
 	int3 id = getGridId( shift );
 
 	if (id.x < 0 ||
 		id.y < 0 ||
 		id.z < 0 ||
-		id.x >= LATTICE_WIDTH ||
-		id.y >= LATTICE_HEIGHT ||
-		id.z >= LATTICE_DEPTH)
+		id.x >= LATTICE_LENGTH ||
+		id.y >= LATTICE_LENGTH ||
+		id.z >= LATTICE_LENGTH)
 		return;
 
 	int index = getGridIndex( id );
@@ -852,9 +738,9 @@ __global__ void compute_pressure( const float * __restrict__ p_in, float *p_out,
 	// Dirichlet BC takes priority: boundary cells are always zero pressure,
 	// regardless of thread index. This prevents overlap-zone threads whose
 	// domain-side neighbor is OOB.
-	if (id.x == 0 || id.x == LATTICE_WIDTH - 1 ||
-		id.y == 0 || id.y == LATTICE_HEIGHT - 1 ||
-		id.z == 0 || id.z == LATTICE_DEPTH - 1)
+	if (id.x == 0 || id.x == LATTICE_LENGTH - 1 ||
+		id.y == 0 || id.y == LATTICE_LENGTH - 1 ||
+		id.z == 0 || id.z == LATTICE_LENGTH - 1)
 	{
 		p_out[index] = 0.0f;
 	}
@@ -886,9 +772,7 @@ static void initPressure(PressureConfig &config, cudaDeviceProp &prop)
 	initSimpleConfig( config, prop );
 
 	//----------------------------------------------------------------------
-	int memSize =	LATTICE_WIDTH *
-					LATTICE_HEIGHT *
-					LATTICE_DEPTH * sizeof(float);
+	int memSize = LATTICE_LENGTH * LATTICE_LENGTH * LATTICE_LENGTH * sizeof(float);
 
 	cudaMalloc(&config.p[0], memSize);
 	cudaMalloc(&config.p[1], memSize);
@@ -904,23 +788,23 @@ static void deinitPressure(PressureConfig &config)
 
 //--------------------------------------------------------------------------
 //--------------------------------------------------------------------------
-__global__ void subtract_gradient( float3 *v, const float * __restrict__ p, int3 offset, float A )
+__global__ void subtract_gradient( float3 *v, const float * __restrict__ p, float A )
 {
 	extern __shared__ float sharedMem[];
 
 	int3 shift;
-	shift.x = -2 * int(blockIdx.x) + offset.x;
-	shift.y = -2 * int(blockIdx.y) + offset.y;
-	shift.z = -2 * int(blockIdx.z) + offset.z;
+	shift.x = -2 * int(blockIdx.x);
+	shift.y = -2 * int(blockIdx.y);
+	shift.z = -2 * int(blockIdx.z);
 
 	int3 id = getGridId( shift );
 
 	if (id.x < 0 ||
 		id.y < 0 ||
 		id.z < 0 ||
-		id.x >= LATTICE_WIDTH-1 ||
-		id.y >= LATTICE_HEIGHT-1 ||
-		id.z >= LATTICE_DEPTH-1)
+		id.x >= LATTICE_LENGTH - 1 ||
+		id.y >= LATTICE_LENGTH - 1 ||
+		id.z >= LATTICE_LENGTH - 1)
 		return;
 
 	int index = getGridIndex( id );
@@ -939,12 +823,12 @@ __global__ void subtract_gradient( float3 *v, const float * __restrict__ p, int3
 	__syncthreads();
 
 	//---------------------------------------------------------
-	bool bInnerBlock = id.x > 0 &&
-					   id.y > 0 &&
-					   id.z > 0 &&
-					   id.x < blockDim.x-1 &&
-					   id.y < blockDim.y-1 &&
-					   id.z < blockDim.z-1;
+	bool bInnerBlock = threadIdx.x > 0 &&
+					   threadIdx.y > 0 &&
+					   threadIdx.z > 0 &&
+					   threadIdx.x < blockDim.x-1 &&
+					   threadIdx.y < blockDim.y-1 &&
+					   threadIdx.z < blockDim.z-1;
 
 	if ( bInnerBlock )
 	{
@@ -988,24 +872,10 @@ void nsProject( float dt )
 							div_config.blockDim.y *
 							div_config.blockDim.z * sizeof(float3);
 
-		float H = -0.5/LATTICE_N;
+		float H = -0.5f / (LATTICE_LENGTH-2);
 	
-		for ( int i = 0; i < div_config.grid.x; ++i)
-		for ( int j = 0; j < div_config.grid.y; ++j)
-		for ( int k = 0; k < div_config.grid.z; )
-		{
-			unsigned int batch_count = min( div_config.grid.z-k, STREAM_COUNT );
-
-			for ( unsigned int s = 0; s < batch_count; ++s, ++k )
-			{
-				int3 offset = {	i*div_config.batch.x,
-								j*div_config.batch.y,
-								k*div_config.batch.z };
-			
-				compute_div_and_reset_pressure<<<div_config.gridDim,div_config.blockDim,sharedMemSize,s_cudaStream[s]>>>
-					( div_config.div, pressure_config.p[current], data[current], offset, H);
-			}
-		}
+		compute_div_and_reset_pressure<<<div_config.gridDim,div_config.blockDim,sharedMemSize,s_cudaStream>>>
+			( div_config.div, pressure_config.p[current], data[current], H);
 	}
 
 	//-----------------------------------------------------------
@@ -1020,23 +890,9 @@ void nsProject( float dt )
 
 		for (unsigned int l = ITERATION; l--;)
 		{
-			for ( int i = 0; i < pressure_config.grid.x; ++i )
-			for ( int j = 0; j < pressure_config.grid.y; ++j )
-			for ( int k = 0; k < pressure_config.grid.z; )
-			{
-				unsigned int batch_count = min( pressure_config.grid.z-k, STREAM_COUNT );
-
-				for ( unsigned int s = 0; s < batch_count; ++s, ++k )
-				{
-					int3 offset = {	i*pressure_config.batch.x,
-									j*pressure_config.batch.y,
-									k*pressure_config.batch.z };
-
-					compute_pressure<<<pressure_config.gridDim, pressure_config.blockDim, sharedMemSize, s_cudaStream[s]>>>
-						( pressure_config.p[current], pressure_config.p[next], div_config.div, offset );
-				}
-			}
-
+			compute_pressure<<<pressure_config.gridDim, pressure_config.blockDim, sharedMemSize, s_cudaStream>>>
+				( pressure_config.p[current], pressure_config.p[next], div_config.div );
+	
 			current = next;
 			next = 1 - current;
 		}
@@ -1050,24 +906,11 @@ void nsProject( float dt )
 							subgrad_config.blockDim.y *
 							subgrad_config.blockDim.z * sizeof(float);
 
-		float A = 0.5f * LATTICE_N;
+		float A = 0.5f * (LATTICE_LENGTH-2);
 
-		for (int i = 0; i < subgrad_config.grid.x; ++i)
-		for (int j = 0; j < subgrad_config.grid.y; ++j)
-		for (int k = 0; k < subgrad_config.grid.z; )
-		{
-			unsigned int batch_count = min(subgrad_config.grid.z - k, STREAM_COUNT);
-
-			for (unsigned int s = 0; s < batch_count; ++s, ++k)
-			{
-				int3 offset = { i * subgrad_config.batch.x,
-								j * subgrad_config.batch.y,
-								k * subgrad_config.batch.z };
-
-				subtract_gradient<<<subgrad_config.gridDim, subgrad_config.blockDim, sharedMemSize, s_cudaStream[s]>>>
-					(data[current], pressure_config.p[next], offset, A);
-			}
-		}
+	
+		subtract_gradient<<<subgrad_config.gridDim, subgrad_config.blockDim, sharedMemSize, s_cudaStream>>>
+			(data[current], pressure_config.p[next], A);
 	}
 }
 
@@ -1104,10 +947,10 @@ void nsInit( const FbVector3 *initConfig )
 	cudaDeviceProp prop;
 	int device = 0;
 	cudaGetDeviceProperties(&prop, device);
-	prop.maxThreadsPerBlock = LATTICE_WIDTH * LATTICE_HEIGHT * LATTICE_DEPTH;
-	prop.maxThreadsDim[0] = LATTICE_WIDTH;
-	prop.maxThreadsDim[1] = LATTICE_HEIGHT;
-	prop.maxThreadsDim[2] = LATTICE_DEPTH;
+	//prop.maxThreadsPerBlock = LATTICE_WIDTH * LATTICE_HEIGHT * LATTICE_DEPTH;
+	//prop.maxThreadsDim[0] = LATTICE_WIDTH;
+	//prop.maxThreadsDim[1] = LATTICE_HEIGHT;
+	//prop.maxThreadsDim[2] = LATTICE_DEPTH;
 
 	cudaChooseDevice( &device, &prop );
 	cudaSetDevice( device );
@@ -1116,8 +959,7 @@ void nsInit( const FbVector3 *initConfig )
     
     _printOutProp(prop);
 
-	for (int i = 0; i < STREAM_COUNT; ++i)
-		cudaStreamCreate( &s_cudaStream[i] );
+	cudaStreamCreate(&s_cudaStream);
 
 	//-----------------------------------------------------------------------
 	initAddForce( addforce_config, prop );
@@ -1135,9 +977,7 @@ void nsInit( const FbVector3 *initConfig )
 	initSubGrad( subgrad_config, prop );
 
 	//-----------------------------------------------------------------------
-	int memSize =	LATTICE_WIDTH *
-					LATTICE_HEIGHT *
-					LATTICE_DEPTH * sizeof(float3);
+	int memSize = LATTICE_LENGTH * LATTICE_LENGTH * LATTICE_LENGTH * sizeof(float3);
 
 	cudaMalloc( &data[0], memSize );
 	cudaMalloc( &data[1], memSize );
@@ -1161,8 +1001,7 @@ void nsDeinit()
 	cudaFree( data[0] );
 	cudaFree( data[1] );
 
-	for (int i = STREAM_COUNT; i-- > 0; )
-		cudaStreamDestroy( s_cudaStream[i] );
+	cudaStreamDestroy(s_cudaStream);
 }
 
 void nsStep( float dt, const FbVector3 &force, const FbVector3 &axis, float spin )
@@ -1191,13 +1030,6 @@ void nsStep( float dt, const FbVector3 &force, const FbVector3 &axis, float spin
 void * nsGetVelocityGrid()
 {
 	return data[current];
-}
-
-void nsCheck()
-{
-	FbVector3 test[LATTICE_WIDTH][LATTICE_HEIGHT][LATTICE_DEPTH];
-
-	cudaMemcpy( test, data, sizeof(test), cudaMemcpyDeviceToHost );
 }
 
 

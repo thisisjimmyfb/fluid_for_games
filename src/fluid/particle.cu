@@ -18,9 +18,9 @@
 __device__ int3 getGridId( float3 pos )
 {
 	int3 grid_id;
-	grid_id.x = int( pos.x / GRID_SIZE + HALF_WIDTH );
-	grid_id.y = int( pos.y / GRID_SIZE + HALF_HEIGHT );
-	grid_id.z = int( pos.z / GRID_SIZE + HALF_DEPTH );
+	grid_id.x = int( pos.x / GRID_SIZE + HALF_LENGTH);
+	grid_id.y = int( pos.y / GRID_SIZE + HALF_LENGTH);
+	grid_id.z = int( pos.z / GRID_SIZE + HALF_LENGTH);
 
 	return grid_id;
 }
@@ -28,9 +28,9 @@ __device__ int3 getGridId( float3 pos )
 static __device__ float3 getGridEdgeCoord( int3 id )
 {
 	float3 grid_coord;
-	grid_coord.x = ( id.x - HALF_WIDTH )	* GRID_SIZE;
-	grid_coord.y = ( id.y - HALF_HEIGHT )	* GRID_SIZE;
-	grid_coord.z = ( id.z - HALF_DEPTH )	* GRID_SIZE;
+	grid_coord.x = ( id.x - HALF_LENGTH)	* GRID_SIZE;
+	grid_coord.y = ( id.y - HALF_LENGTH)	* GRID_SIZE;
+	grid_coord.z = ( id.z - HALF_LENGTH)	* GRID_SIZE;
 
 	return grid_coord;
 }
@@ -38,9 +38,9 @@ static __device__ float3 getGridEdgeCoord( int3 id )
 __device__ float3 clampBounds( float3 p )
 {
 	float3 grid_range;
-	grid_range.x = (HALF_WIDTH-1)*GRID_SIZE;
-	grid_range.y = (HALF_HEIGHT-1)*GRID_SIZE;
-	grid_range.z = (HALF_DEPTH-1)*GRID_SIZE;
+	grid_range.x = (HALF_LENGTH -1)*GRID_SIZE;
+	grid_range.y = (HALF_LENGTH -1)*GRID_SIZE;
+	grid_range.z = (HALF_LENGTH -1)*GRID_SIZE;
 
 	p.x = max( -grid_range.x, min( p.x, grid_range.x ) );
 	p.y = max( -grid_range.y, min( p.y, grid_range.y ) );
@@ -79,12 +79,12 @@ __global__ void particle(	float3 *p, int3 offset, dim3 dim,
 	{
 		int3 grid_id = getGridId(pos);
 		// Ensure grid_id is within bounds
-		grid_id.x = max( 1, min( grid_id.x, LATTICE_WIDTH-2 ) );
-		grid_id.y = max( 1, min( grid_id.y, LATTICE_HEIGHT-2 ) );
-		grid_id.z = max( 1, min( grid_id.z, LATTICE_DEPTH-2 ) );
+		grid_id.x = max( 1, min( grid_id.x, LATTICE_LENGTH-2 ) );
+		grid_id.y = max( 1, min( grid_id.y, LATTICE_LENGTH-2 ) );
+		grid_id.z = max( 1, min( grid_id.z, LATTICE_LENGTH-2 ) );
 
-		int index_v = grid_id.x * LATTICE_HEIGHT * LATTICE_DEPTH +
-					  grid_id.y * LATTICE_DEPTH +
+		int index_v = grid_id.x * LATTICE_LENGTH * LATTICE_LENGTH +
+					  grid_id.y * LATTICE_LENGTH +
 					  grid_id.z;
 
 		float3 vec = v[index_v];

@@ -14,6 +14,7 @@
 #else
 #include "glut.h"
 #include <GL/gl.h>
+#include <GL/wglew.h>
 #pragma comment(lib,"freeglut")
 #endif
 
@@ -24,7 +25,7 @@ float			g_TimeStep = 1.0f/60;
 
 FbCamera		g_Camera;
 
-FbVector3		g_Velocity[LATTICE_WIDTH][LATTICE_HEIGHT][LATTICE_DEPTH];
+FbVector3		g_Velocity[LATTICE_LENGTH][LATTICE_LENGTH][LATTICE_LENGTH];
 
 FbVector3		g_Particle[PARTICLE_COUNT];
 
@@ -63,9 +64,9 @@ void resetPosition()
 		float y = rand() / float(RAND_MAX);
 		float z = rand() / float(RAND_MAX);
 
-		x = ( x*LATTICE_WIDTH - HALF_WIDTH ) * GRID_SIZE;
-		y = ( y*LATTICE_HEIGHT - HALF_HEIGHT ) * GRID_SIZE;
-		z = ( z*LATTICE_DEPTH - HALF_DEPTH ) * GRID_SIZE;
+		x = (x * LATTICE_LENGTH - HALF_LENGTH) * GRID_SIZE;
+		y = (y * LATTICE_LENGTH - HALF_LENGTH) * GRID_SIZE;
+		z = (z * LATTICE_LENGTH - HALF_LENGTH) * GRID_SIZE;
 
 		g_Particle[i] = MakeVector3( x, y, z );
 	}
@@ -77,17 +78,17 @@ void init() {
 	srand( time(0) );
 
 	//----------------------------------------------------------
-	for (int i=LATTICE_WIDTH;i--;)
-	for (int j=LATTICE_HEIGHT;j--;)
-	for (int k=LATTICE_DEPTH;k--;)
+	for (int i=LATTICE_LENGTH;i--;)
+	for (int j=LATTICE_LENGTH;j--;)
+	for (int k=LATTICE_LENGTH;k--;)
 	{
-		float x = ( i - HALF_WIDTH + 0.5f ) * GRID_SIZE;
-		float y = ( j - HALF_HEIGHT + 0.5f ) * GRID_SIZE;
-		float z = ( k - HALF_DEPTH + 0.5f ) * GRID_SIZE;
+		float x = ( i - HALF_LENGTH + 0.5f ) * GRID_SIZE;
+		float y = ( j - HALF_LENGTH + 0.5f ) * GRID_SIZE;
+		float z = ( k - HALF_LENGTH + 0.5f ) * GRID_SIZE;
 
 		FbVector3 r = MakeVector3( x, y, 0.0f );
 
-		float R = HALF_WIDTH*HALF_WIDTH*GRID_SIZE*GRID_SIZE;
+		float R = HALF_LENGTH*HALF_LENGTH*GRID_SIZE*GRID_SIZE;
 
 		if ( LengthSqr(r) > 0.0f && LengthSqr(r) < R )
 		{
@@ -113,7 +114,7 @@ void init() {
 
 	g_Camera.SetPerspective( FOV, aspect_ratio, ZNEAR, ZFAR );
 
-	float fSize =	max(HALF_WIDTH,max(HALF_HEIGHT,HALF_DEPTH)) *
+	float fSize =	max(HALF_LENGTH,max(HALF_LENGTH, HALF_LENGTH)) *
 					GRID_SIZE;
 
 	float z = 2.5f * fSize / tanf( .5f * FOV );
@@ -123,6 +124,8 @@ void init() {
 	g_Camera.m_vUp = FbVector3::UnitVecY;
 
 	//glPointSize(2);
+
+	wglSwapIntervalEXT(1);
 }
 
 void deinit()
@@ -134,9 +137,9 @@ void deinit()
 
 void renderLattice()
 {
-	float x = (HALF_WIDTH-1) * GRID_SIZE;
-	float y = (HALF_HEIGHT-1) * GRID_SIZE;
-	float z = (HALF_DEPTH-1) * GRID_SIZE;
+	float x = (HALF_LENGTH-1) * GRID_SIZE;
+	float y = (HALF_LENGTH-1) * GRID_SIZE;
+	float z = (HALF_LENGTH-1) * GRID_SIZE;
 
 	glBegin(GL_LINE_LOOP);
 		glVertex3f(	-x,	y,	z);

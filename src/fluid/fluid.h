@@ -12,10 +12,7 @@
 
 
 //---------------------------------------------------------------
-#define LATTICE_N				128
-#define LATTICE_WIDTH			LATTICE_N
-#define LATTICE_HEIGHT			LATTICE_N
-#define LATTICE_DEPTH			LATTICE_N
+#define LATTICE_LENGTH			(128)
 #define GRID_SIZE				0.25f
 
 #define PARTICLE_COUNT			(128*128*128)
@@ -23,15 +20,12 @@
 //#define PARTICLE_COUNT			(1280000)//(64*32*32)
 //#define PARTICLE_COUNT			(16*16*16)
 
-
-#define HALF_WIDTH				(0.5f*LATTICE_WIDTH)
-#define HALF_HEIGHT				(0.5f*LATTICE_HEIGHT)
-#define HALF_DEPTH				(0.5f*LATTICE_DEPTH)
+#define HALF_LENGTH				(LATTICE_LENGTH/2)
 
 #define ITERATION				20
 
-#define VISCOSITY				30.0f
+#define VISCOSITY				2.0f
 
-#define GRAVITY					0.8f
+#define GRAVITY					0.098f
 //#define GRAVITY					0
 
